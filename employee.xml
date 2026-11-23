@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<employees>
+    <employee>
+        <id>101</id>
+        <name>Arun</name>
+        <department>IT</department>
+        <salary>30000</salary>
+        <city>Bangalore</city>
+    </employee>
+    <employee>
+        <id>102</id>
+        <name>Rahul</name>
+        <department>HR</department>
+        <salary>25000</salary>
+        <city>Chennai</city>
+    </employee>
+    <employee>
+        <id>103</id>
+        <name>Priya</name>
+        <department>Finance</department>
+        <salary>35000</salary>
+        <city>Mumbai</city>
+    </employee>
+    <employee>
+        <id>104</id>
+        <name>Kumar</name>
+        <department>Testing</department>
+        <salary>28000</salary>
+        <city>Delhi</city>
+    </employee>
+</employees>

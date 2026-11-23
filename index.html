@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Employee Information</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+            background-color: lightblue;
+            margin: 0;
+            padding: 30px 15px;
+        }
+        h1 { color: #172554; }
+        table {
+            margin: 20px auto;
+            width: 90%;
+            max-width: 900px;
+            border-collapse: collapse;
+            background-color: white;
+        }
+        th, td {
+            border: 1px solid #333;
+            padding: 12px;
+        }
+        th {
+            background-color: navy;
+            color: white;
+        }
+        button {
+            padding: 10px 20px;
+            background-color: green;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        button:hover { background-color: darkgreen; }
+        #message { margin-top: 12px; }
+    </style>
+</head>
+<body>
+    <h1>Employee Information</h1>
+    <button onclick="loadXML()">Load Employee Data</button>
+    <button onclick="openFilePicker()">Choose File</button>
+    <input id="fileInput" type="file" accept=".xml,.csv,.txt,application/xml,text/xml,text/csv,text/plain" hidden onchange="loadSelectedFile(event)">
+    <p id="message"></p>
+
+    <table>
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Name</th>
+                <th>Department</th>
+                <th>Salary</th>
+                <th>City</th>
+            </tr>
+        </thead>
+        <tbody id="data"></tbody>
+    </table>
+
+    <script>
+        var employeeFields = ["id", "name", "department", "salary", "city"];
+        var fieldAliases = {
+            id: ["id", "employeeid", "empid"],
+            name: ["name", "employeename"],
+            department: ["department", "dept"],
+            salary: ["salary"],
+            city: ["city"]
+        };
+
+        function loadXML() {
+            var xhttp = new XMLHttpRequest();
+
+            xhttp.onreadystatechange = function() {
+                if (this.readyState === 4) {
+                    if (this.status === 200) {
+                        try {
+                            var employees = parseXmlEmployees(this.responseText);
+                            displayEmployees(employees);
+                            document.getElementById("message").textContent =
+                                employees.length + " employee records loaded.";
+                        } catch (error) {
+                            document.getElementById("message").textContent = error.message;
+                        }
+                    } else {
+                        document.getElementById("message").textContent =
+                            "Unable to load employee.xml. Run this page using VS Code Live Server.";
+                    }
+                }
+            };
+
+            xhttp.open("GET", "employee.xml", true);
+            xhttp.send();
+        }
+
+        function openFilePicker() {
+            document.getElementById("fileInput").click();
+        }
+
+        function loadSelectedFile(event) {
+            var file = event.target.files[0];
+            event.target.value = "";
+            if (!file) {
+                return;
+            }
+
+            var extension = file.name.split(".").pop().toLowerCase();
+            if (["xml", "csv", "txt"].indexOf(extension) === -1) {
+                document.getElementById("message").textContent =
+                    "Please choose an XML, CSV, or TXT file.";
+                return;
+            }
+
+            var reader = new FileReader();
+            reader.onload = function() {
+                try {
+                    var employees = extension === "xml"
+                        ? parseXmlEmployees(reader.result)
+                        : parseDelimitedEmployees(reader.result);
+                    displayEmployees(employees);
+                    document.getElementById("message").textContent =
+                        employees.length + " employee records loaded from " + file.name + ".";
+                } catch (error) {
+                    document.getElementById("message").textContent = error.message;
+                }
+            };
+            reader.onerror = function() {
+                document.getElementById("message").textContent =
+                    "Could not read " + file.name + ". Please try another file.";
+            };
+            reader.readAsText(file);
+        }
+
+        function parseXmlEmployees(xmlText) {
+            var xmlDoc = new DOMParser().parseFromString(xmlText, "application/xml");
+            if (xmlDoc.getElementsByTagName("parsererror").length > 0) {
+                throw new Error("Could not parse the selected XML file.");
+            }
+
+            var employeeNodes = xmlDoc.getElementsByTagName("*");
+            var employees = [];
+            for (var i = 0; i < employeeNodes.length; i++) {
+                var nodeName = employeeNodes[i].localName || employeeNodes[i].nodeName;
+                if (nodeName.toLowerCase() !== "employee") {
+                    continue;
+                }
+
+                var employee = {};
+                for (var j = 0; j < employeeFields.length; j++) {
+                    var field = employeeFields[j];
+                    var value = findXmlField(employeeNodes[i], field);
+                    if (value === null) {
+                        throw new Error("Employee record " + (employees.length + 1) +
+                            " is missing the " + field + " field.");
+                    }
+                    employee[field] = value;
+                }
+                employees.push(employee);
+            }
+
+            if (employees.length === 0) {
+                throw new Error("No employee records were found in the selected XML file.");
+            }
+            return employees;
+        }
+
+        function findXmlField(employeeNode, field) {
+            var nodes = employeeNode.getElementsByTagName("*");
+            for (var i = 0; i < nodes.length; i++) {
+                var nodeName = nodes[i].localName || nodes[i].nodeName;
+                if (fieldAliases[field].indexOf(normalizeFieldName(nodeName)) !== -1) {
+                    return nodes[i].textContent.trim();
+                }
+            }
+            return null;
+        }
+
+        function parseDelimitedEmployees(text) {
+            var delimiter = detectDelimiter(text);
+            var rows = parseDelimitedRows(text, delimiter);
+            if (rows.length === 0) {
+                throw new Error("No employee records were found in the selected file.");
+            }
+
+            var headers = rows[0].map(normalizeFieldName);
+            var columnIndexes = {};
+            var matchedHeaders = 0;
+            for (var i = 0; i < employeeFields.length; i++) {
+                var field = employeeFields[i];
+                columnIndexes[field] = -1;
+                for (var j = 0; j < headers.length; j++) {
+                    if (fieldAliases[field].indexOf(headers[j]) !== -1) {
+                        columnIndexes[field] = j;
+                        matchedHeaders++;
+                        break;
+                    }
+                }
+            }
+
+            var hasHeader = matchedHeaders > 0;
+            if (hasHeader && matchedHeaders !== employeeFields.length) {
+                throw new Error("The file header must include ID, Name, Department, Salary, and City.");
+            }
+
+            var startRow = hasHeader ? 1 : 0;
+            var employees = [];
+            for (var rowIndex = startRow; rowIndex < rows.length; rowIndex++) {
+                var row = rows[rowIndex];
+                if (hasHeader && employeeFields.some(function(field) {
+                    return columnIndexes[field] >= row.length;
+                })) {
+                    throw new Error("Employee record " + (rowIndex - startRow + 1) +
+                        " does not contain all required fields.");
+                }
+                if (!hasHeader && row.length !== employeeFields.length) {
+                    throw new Error("Employee record " + (rowIndex + 1) +
+                        " must contain exactly five fields.");
+                }
+
+                var employee = {};
+                for (var column = 0; column < employeeFields.length; column++) {
+                    var employeeField = employeeFields[column];
+                    employee[employeeField] = row[hasHeader
+                        ? columnIndexes[employeeField]
+                        : column].trim();
+                }
+                employees.push(employee);
+            }
+
+            if (employees.length === 0) {
+                throw new Error("No employee records were found in the selected file.");
+            }
+            return employees;
+        }
+
+        function detectDelimiter(text) {
+            var firstLine = text.replace(/^\uFEFF/, "").split(/\r?\n/).filter(function(line) {
+                return line.trim() !== "";
+            })[0] || "";
+            var delimiters = [",", "\t", ";", "|"];
+            var counts = [0, 0, 0, 0];
+            var inQuotes = false;
+
+            for (var i = 0; i < firstLine.length; i++) {
+                if (firstLine[i] === '"') {
+                    if (inQuotes && firstLine[i + 1] === '"') {
+                        i++;
+                    } else {
+                        inQuotes = !inQuotes;
+                    }
+                } else if (!inQuotes) {
+                    var delimiterIndex = delimiters.indexOf(firstLine[i]);
+                    if (delimiterIndex !== -1) {
+                        counts[delimiterIndex]++;
+                    }
+                }
+            }
+
+            var bestIndex = 0;
+            for (var j = 1; j < counts.length; j++) {
+                if (counts[j] > counts[bestIndex]) {
+                    bestIndex = j;
+                }
+            }
+            return delimiters[bestIndex];
+        }
+
+        function parseDelimitedRows(text, delimiter) {
+            text = text.replace(/^\uFEFF/, "");
+            var rows = [];
+            var row = [];
+            var value = "";
+            var inQuotes = false;
+
+            for (var i = 0; i < text.length; i++) {
+                var character = text[i];
+                if (inQuotes) {
+                    if (character === '"' && text[i + 1] === '"') {
+                        value += '"';
+                        i++;
+                    } else if (character === '"') {
+                        inQuotes = false;
+                    } else {
+                        value += character;
+                    }
+                } else if (character === '"' && value === "") {
+                    inQuotes = true;
+                } else if (character === delimiter) {
+                    row.push(value);
+                    value = "";
+                } else if (character === "\n" || character === "\r") {
+                    if (character === "\r" && text[i + 1] === "\n") {
+                        i++;
+                    }
+                    row.push(value);
+                    if (row.some(function(cell) { return cell.trim() !== ""; })) {
+                        rows.push(row);
+                    }
+                    row = [];
+                    value = "";
+                } else {
+                    value += character;
+                }
+            }
+
+            if (inQuotes) {
+                throw new Error("The selected file contains an unfinished quoted field.");
+            }
+            row.push(value);
+            if (row.some(function(cell) { return cell.trim() !== ""; })) {
+                rows.push(row);
+            }
+            return rows;
+        }
+
+        function normalizeFieldName(value) {
+            return value.trim().toLowerCase().replace(/[^a-z0-9]/g, "");
+        }
+
+        function displayEmployees(employees) {
+            var tableBody = document.getElementById("data");
+            tableBody.textContent = "";
+            for (var i = 0; i < employees.length; i++) {
+                var row = document.createElement("tr");
+                for (var j = 0; j < employeeFields.length; j++) {
+                    var cell = document.createElement("td");
+                    cell.textContent = employees[i][employeeFields[j]];
+                    row.appendChild(cell);
+                }
+                tableBody.appendChild(row);
+            }
+        }
+    </script>
+</body>
+</html>
